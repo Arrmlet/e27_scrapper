@@ -45,56 +45,9 @@ def yaml_loader(filepath):
         data = yaml.load(file_descriptor)
     return data
 
-class UrlSpider(scrapy.Spider):
-    name = "urls"
-
-    start_urls = [
-        'https://e27.co/startups/',
-    ]
-
-    def __init__(self):
-        opp = Options()
-        opp.add_argument('--blink-settings=imagesEnabled=false')
-        opp.add_argument('--headless')
-        self.driver = webdriver.Chrome('./chromedriver', chrome_options=opp)
-
-    def parse(self, response):
-        self.driver.get(response.url)
-        time.sleep(3)
-        run_check, prev_value_list = True, [0, 0]
-        button = self.driver.find_element_by_xpath("//button[@class='button btn-load-more']")
-
-        while run_check:
-            quantity_of_loaded_starttups =  len(self.driver.find_elements_by_xpath(
-                        "//div[@class='startup-block startup-list-item']"))
-            print('Loading, {} startups loaded'.format(quantity_of_loaded_starttups))
-            prev_value_list.append(quantity_of_loaded_starttups)
-            timer = 0
-            while (not button.is_displayed()):
-                time.sleep(0.1)
-                timer +=0.1
-                print(timer)
-                if timer == 60:
-                    run_check = False
-                    break
-
-
-            button.click()
-
-            if prev_value_list[-2] == prev_value_list[-1] and  prev_value_list[-3]  == prev_value_list[-1]:
-                run_check = False
-
-
-        company_names, e_urls,  = [], []
-        for item in self.driver.find_elements_by_xpath("//div[@class='startup-block startup-list-item']"):
-            name = item.find_element_by_css_selector('.company-name').text
-            e27url = item.find_element_by_css_selector(".startuplink").get_attribute("href")
-
-            yield {"Startup":name,"Url":e27url}
-
 
 class UrlApiSpider(scrapy.Spider):
-    name = "api"
+    name = "urls"
 
     start_urls = [
         'https://e27.co/startups/',
