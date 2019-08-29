@@ -15,19 +15,24 @@ import yaml
 import pandas as pd
 import random
 import re
-
+import json
+import requests
+from bs4 import BeautifulSoup
 #Check is email in comment content (using regular experession)
 def is_email_phone(text, tp):
     if tp == 'email':
         lst = re.findall('\S+@\S+', text)
-    else:
+    elif tp == 'phone':
         lst = re.findall("\d{3}[-\.\s]??\d{3}[-\.\s]??\d{4}|\(\d{3}\)\s*\d{3}[-\.\s]??\d{4}|\d{3}[-\.\s]??\d{4}",text)
+    else:
+        lst = re.findall('\d+', text)
     if len(lst) == 0:
         return ''
 
     lst = ",".join(lst)
     # return of email
     return lst
+
 #Random 250 links from quotes.csv
 def get_250():
     url_base = pd.read_csv('quotes.csv')
@@ -52,7 +57,6 @@ class UrlSpider(scrapy.Spider):
         opp.add_argument('--blink-settings=imagesEnabled=false')
         opp.add_argument('--headless')
         self.driver = webdriver.Chrome('./chromedriver', chrome_options=opp)
-        #self.wait = WebDriverWait(self.driver, 10)
 
     def parse(self, response):
         self.driver.get(response.url)
@@ -79,8 +83,7 @@ class UrlSpider(scrapy.Spider):
 
             if prev_value_list[-2] == prev_value_list[-1] and  prev_value_list[-3]  == prev_value_list[-1]:
                 run_check = False
-            elif quantity_of_loaded_starttups == 10000:
-                run_check = False
+
 
         company_names, e_urls,  = [], []
         for item in self.driver.find_elements_by_xpath("//div[@class='startup-block startup-list-item']"):
@@ -88,6 +91,46 @@ class UrlSpider(scrapy.Spider):
             e27url = item.find_element_by_css_selector(".startuplink").get_attribute("href")
 
             yield {"Startup":name,"Url":e27url}
+
+
+class UrlApiSpider(scrapy.Spider):
+    name = "api"
+
+    start_urls = [
+        'https://e27.co/startups/',
+    ]
+
+    def __init__(self):
+        opp = Options()
+        #opp.add_argument('--blink-settings=imagesEnabled=false')
+        opp.add_argument('--headless')
+        opp.add_argument('--no-sandbox')
+        opp.add_argument('--ignore-certificate-errors')
+        opp.add_argument('--window-size=1920,1080')
+        capabilities = DesiredCapabilities.CHROME.copy()
+        capabilities['acceptSslCerts'] = True
+        capabilities['acceptInsecureCerts'] = True
+        self.driver = webdriver.Chrome('./chromedriver', chrome_options=opp, desired_capabilities=capabilities)
+
+    def parse(self, response):
+        self.driver.get(response.url)
+        time.sleep(3)
+        num_of_startups =is_email_phone(self.driver.find_element_by_xpath("//p[@class='bold startup_list_count']").text, 'num')
+        api_url = 'https://e27.co/api/startups/'
+
+
+        start, length = 0, 4000
+        while (start < int(num_of_startups)):
+            PARAMS = {'tab_name':'recentlyupdated','start':start, 'length':length}
+            r = requests.get(url = api_url, params = PARAMS)
+            data = r.json()
+            data = data['data']['list']
+            for info in data:
+                name = info['name']
+                e27url = 'https://e27.co/startups/{}'.format(info['slug'])
+                yield {"Startup":name,"Url":e27url}
+
+            start +=length
 
 
 class ContentSpider(scrapy.Spider):
@@ -135,13 +178,23 @@ class ContentSpider(scrapy.Spider):
             for social_url in social_urls:
                 social_url_href = social_urls_list.append(social_url.get_attribute("href"))
 
-            social_urls_string = "".join(social_urls_list)
+            social_urls_string = ", ".join(social_urls_list)
         except Exception as e:
             print(e)
             social_urls_string = ''
         try:
-            description = self.driver.find_element_by_css_selector('.profile-desc-text').text
-            short_description = description[:int(len(description)/10)]
+            main_description = self.driver.find_element_by_css_selector('.profile-desc-text')
+            description = main_description.text
+            html_description = main_description.get_attribute('innerHTML')
+            soup = BeautifulSoup(html_description, 'lxml')
+            try:
+                p_tag = soup.select('p')
+                raw_p_tag = str(p_tag[0]).split('<br/>')[0]
+                cleanr = re.compile('<.*?>')
+                short_description = re.sub(cleanr, '', raw_p_tag)
+
+            except:
+                short_description = ''
         except:
             description, short_description = '', ''
 
